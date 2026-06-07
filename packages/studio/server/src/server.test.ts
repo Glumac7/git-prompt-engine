@@ -145,6 +145,34 @@ describe('Studio Bridge Server API', () => {
 
       expect(res.status).toBe(400);
     });
+
+    it('should return 400 security/validation error if prompt ID contains path traversal sequences', async () => {
+      const res = await request(app)
+        .post('/api/v1/prompts/..%2fescape')
+        .send({
+          id: 'escape',
+          name: 'Escape',
+          messages: [],
+          requiredVariables: [],
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Invalid prompt ID format');
+    });
+
+    it('should return 400 security/validation error if prompt ID contains invalid characters', async () => {
+      const res = await request(app)
+        .post('/api/v1/prompts/-invalid-start')
+        .send({
+          id: '-invalid-start',
+          name: 'Invalid Start',
+          messages: [],
+          requiredVariables: [],
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Invalid prompt ID format');
+    });
   });
 
   describe('POST /api/v1/git/commit', () => {
@@ -198,6 +226,24 @@ describe('Studio Bridge Server API', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBeDefined();
+    });
+
+    it('should return 400 if ID contains path traversal sequences', async () => {
+      const res = await request(app)
+        .post('/api/v1/git/commit')
+        .send({ id: '../../escape' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Invalid prompt ID format');
+    });
+
+    it('should return 400 if ID contains invalid characters', async () => {
+      const res = await request(app)
+        .post('/api/v1/git/commit')
+        .send({ id: '-invalid' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Invalid prompt ID format');
     });
 
     it('should return 500 internal server error if git command fails', async () => {

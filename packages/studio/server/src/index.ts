@@ -1,4 +1,5 @@
 import { parseArgs } from 'node:util';
+import * as fs from 'node:fs';
 import { createServer } from './server.js';
 
 const { values } = parseArgs({
@@ -24,6 +25,17 @@ const port = parseInt(portStr, 10);
 
 if (!promptDir) {
   console.error('Error: Target directory is required. Specify it via --dir <path> or PROMPT_DIR environment variable.');
+  process.exit(1);
+}
+
+try {
+  const stats = fs.statSync(promptDir);
+  if (!stats.isDirectory()) {
+    console.error(`Error: Target path "${promptDir}" is not a directory.`);
+    process.exit(1);
+  }
+} catch (err) {
+  console.error(`Error: Target directory "${promptDir}" does not exist or is inaccessible: ${(err as Error).message}`);
   process.exit(1);
 }
 
