@@ -1,8 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { PromptEngine } from './index.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+
+vi.mock('fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs/promises')>();
+  return {
+    ...actual,
+    readFile: vi.fn(actual.readFile),
+  };
+});
+
+import { PromptEngine } from './index.js';
 
 describe('PromptEngine', () => {
   let tempDir: string;
@@ -335,4 +344,188 @@ describe('PromptEngine', () => {
       expect(res2[0].content).toBe('Greeting: Hi');
     });
   });
+
+  describe('Robust Suite of Unit Tests', () => {
+    describe('Requirement 1: Parses and caches valid prompt JSON files', () => {
+      it('should successfully parse a valid prompt JSON file and cache it if cacheTtl is set', async () => {
+        const promptId = 'req1-valid-prompt';
+        const templateContent = {
+          id: promptId,
+          name: 'Valid Prompt',
+          messages: [{ role: 'user', content: 'Hello {{name}}' }],
+          requiredVariables: ['name']
+        };
+        await fs.writeFile(
+          path.join(tempDir, `${promptId}.json`),
+          JSON.stringify(templateContent, null, 2)
+        );
+
+        const engine = new PromptEngine({
+          promptDir: tempDir,
+          cacheTtl: 10000 // 10s
+        });
+
+        const readFileMock = vi.mocked(fs.readFile);
+        readFileMock.mockClear();
+
+        const res1 = await engine.getTemplate(promptId);
+        expect(res1).toEqual(templateContent);
+        expect(readFileMock).toHaveBeenCalledTimes(1);
+
+        // Call again to verify cache is used
+        const res2 = await engine.getTemplate(promptId);
+        expect(res2).toEqual(templateContent);
+        expect(readFileMock).toHaveBeenCalledTimes(1); // Still 1 call, cached
+      });
+    });
+
+    describe('Requirement 2: Validation errors for structural syntax errors', () => {
+      it('should throw an explicit validation error for missing fields in JSON using mock data', async () => {
+        const readFileMock = vi.mocked(fs.readFile);
+        
+        // Missing required field 'name' and 'id'
+        const invalidTemplate = {
+          messages: [{ role: 'user', content: 'Hello' }],
+          requiredVariables: []
+        };
+        
+        readFileMock.mockResolvedValueOnce(JSON.stringify(invalidTemplate));
+        
+        const engine = new PromptEngine({ promptDir: tempDir });
+        
+        await expect(engine.getTemplate('mocked-invalid-fields')).rejects.toThrow(
+          /failed schema validation/
+        );
+      });
+
+      it('should throw an explicit validation error for invalid message roles using mock data', async () => {
+        const readFileMock = vi.mocked(fs.readFile);
+        
+        // Invalid message role
+        const invalidTemplate = {
+          id: 'invalid-role-prompt',
+          name: 'Invalid Role Prompt',
+          messages: [{ role: 'invalid-role', content: 'Hello' }],
+          requiredVariables: []
+        };
+        
+        readFileMock.mockResolvedValueOnce(JSON.stringify(invalidTemplate));
+        
+        const engine = new PromptEngine({ promptDir: tempDir });
+        
+        await expect(engine.getTemplate('mocked-invalid-role')).rejects.toThrow(
+          /failed schema validation/
+        );
+      });
+
+      it('should throw an explicit validation error for malformed JSON using mock data', async () => {
+        const readFileMock = vi.mocked(fs.readFile);
+        
+        readFileMock.mockResolvedValueOnce('{"id": "broken", "name": "Broken", "messages": ['); // Malformed JSON
+        
+        const engine = new PromptEngine({ promptDir: tempDir });
+        
+        await expect(engine.getTemplate('mocked-malformed-json')).rejects.toThrow(
+          /Failed to parse prompt template "mocked-malformed-json" as JSON/
+        );
+      });
+    });
+
+    describe('Requirement 3: Compiler errors for missing required variables', () => {
+      it('should throw an evaluation error when required variables are missing from runtime payload and fallbackParams', async () => {
+        const promptId = 'req3-missing-vars';
+        const templateContent = {
+          id: promptId,
+          name: 'Missing Variables Prompt',
+          messages: [{ role: 'user', content: 'Hello {{first}} {{last}}' }],
+          requiredVariables: ['first', 'last']
+        };
+        await fs.writeFile(
+          path.join(tempDir, `${promptId}.json`),
+          JSON.stringify(templateContent, null, 2)
+        );
+
+        const engine = new PromptEngine({ promptDir: tempDir });
+
+        // Missing 'last'
+        await expect(engine.compile(promptId, { first: 'John' })).rejects.toThrow(
+          /Evaluation Error: Missing required application parameter "last"/
+        );
+      });
+
+      it('should NOT throw an error when required variables are provided in fallbackParams', async () => {
+        const promptId = 'req3-fallback-vars';
+        const templateContent = {
+          id: promptId,
+          name: 'Fallback Variables Prompt',
+          messages: [{ role: 'user', content: 'Hello {{first}} {{last}}' }],
+          requiredVariables: ['first', 'last']
+        };
+        await fs.writeFile(
+          path.join(tempDir, `${promptId}.json`),
+          JSON.stringify(templateContent, null, 2)
+        );
+
+        const engine = new PromptEngine({
+          promptDir: tempDir,
+          fallbackParams: { last: 'Doe' }
+        });
+
+        // 'first' is in runtime payload, 'last' is in fallbackParams. Should succeed.
+        const messages = await engine.compile(promptId, { first: 'John' });
+        expect(messages).toEqual([
+          { role: 'user', content: 'Hello John Doe' }
+        ]);
+      });
+    });
+
+    describe('Requirement 4: Cache hits prevent duplicate disk I/O reads within TTL window', () => {
+      it('should only hit disk once inside TTL window, and hit disk again after TTL window expires', async () => {
+        vi.useFakeTimers();
+        const mockStartTime = 2000000;
+        vi.setSystemTime(mockStartTime);
+
+        const promptId = 'req4-ttl-cache';
+        const templateContent = {
+          id: promptId,
+          name: 'TTL Cache Prompt',
+          messages: [{ role: 'user', content: 'Count: {{count}}' }],
+          requiredVariables: ['count']
+        };
+        await fs.writeFile(
+          path.join(tempDir, `${promptId}.json`),
+          JSON.stringify(templateContent, null, 2)
+        );
+
+        const engine = new PromptEngine({
+          promptDir: tempDir,
+          cacheTtl: 5000 // 5 seconds
+        });
+
+        const readFileMock = vi.mocked(fs.readFile);
+        readFileMock.mockClear();
+
+        // First call (cache miss -> reads disk)
+        await engine.compile(promptId, { count: '1' });
+        expect(readFileMock).toHaveBeenCalledTimes(1);
+
+        // Advance time by 3 seconds (within 5 seconds TTL)
+        vi.setSystemTime(mockStartTime + 3000);
+
+        // Second call (cache hit -> no disk read)
+        await engine.compile(promptId, { count: '2' });
+        expect(readFileMock).toHaveBeenCalledTimes(1); // Still 1
+
+        // Advance time by another 3 seconds (total 6 seconds, TTL expired)
+        vi.setSystemTime(mockStartTime + 6000);
+
+        // Third call (cache expired -> reads disk again)
+        await engine.compile(promptId, { count: '3' });
+        expect(readFileMock).toHaveBeenCalledTimes(2);
+
+        vi.useRealTimers();
+      });
+    });
+  });
 });
+
