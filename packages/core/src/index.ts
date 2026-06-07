@@ -14,12 +14,14 @@ export class PromptEngine {
 
   private options: EngineOptions;
   private cache: Map<string, CacheEntry>;
+  private pendingReads: Map<string, Promise<PromptTemplate>>;
 
   constructor(options: EngineOptions) {
     this.options = {
       ...options,
     };
     this.cache = new Map();
+    this.pendingReads = new Map();
   }
 
   /**
@@ -27,6 +29,7 @@ export class PromptEngine {
    */
   public clearCache(): void {
     this.cache.clear();
+    this.pendingReads.clear();
   }
 
   /**
@@ -47,16 +50,28 @@ export class PromptEngine {
       }
     }
 
-    const template = await this.readTemplateFromDisk(promptId);
+    let pending = this.pendingReads.get(promptId);
+    if (!pending) {
+      pending = this.readTemplateFromDisk(promptId);
+      this.pendingReads.set(promptId, pending);
 
-    if (hasTtl) {
-      this.cache.set(promptId, {
-        template,
-        expiresAt: Date.now() + (this.options.cacheTtl || 0),
-      });
+      pending.then(
+        (template) => {
+          this.pendingReads.delete(promptId);
+          if (hasTtl) {
+            this.cache.set(promptId, {
+              template,
+              expiresAt: Date.now() + (this.options.cacheTtl || 0),
+            });
+          }
+        },
+        () => {
+          this.pendingReads.delete(promptId);
+        }
+      );
     }
 
-    return template;
+    return pending;
   }
 
   /**
@@ -65,6 +80,17 @@ export class PromptEngine {
    * Throws an explicit evaluation error if any required variables are missing.
    */
   public async compile(promptId: string, variables: Record<string, string> = {}): Promise<MessageTemplate[]> {
+    return this.compileInternal(promptId, variables);
+  }
+
+  /**
+   * Alias for compile. Compiles the prompt template with runtime variables.
+   */
+  public async getCompiledPrompt(promptId: string, variables: Record<string, string> = {}): Promise<MessageTemplate[]> {
+    return this.compile(promptId, variables);
+  }
+
+  private async compileInternal(promptId: string, variables: Record<string, string> = {}): Promise<MessageTemplate[]> {
     const template = await this.getTemplate(promptId);
 
     const mergedVariables = {
@@ -104,7 +130,16 @@ export class PromptEngine {
   }
 
   private async readTemplateFromDisk(promptId: string): Promise<PromptTemplate> {
-    const filePath = path.join(this.options.promptDir, `${promptId}.json`);
+    const resolvedPromptDir = path.resolve(this.options.promptDir);
+    const filePath = path.resolve(resolvedPromptDir, `${promptId}.json`);
+
+    const isWithinDir = resolvedPromptDir === path.sep
+      ? filePath.startsWith(resolvedPromptDir)
+      : filePath.startsWith(resolvedPromptDir + path.sep);
+
+    if (!isWithinDir) {
+      throw new Error(`Security Error: Path traversal detected for promptId "${promptId}"`);
+    }
     
     let rawContent: string;
     try {
