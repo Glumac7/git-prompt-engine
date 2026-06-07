@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { EngineOptions, PromptTemplate, MessageTemplate } from './types/index.js';
+import { EngineOptions, PromptTemplate, MessageTemplate, PromptTemplateSchema } from './types/index.js';
 
 export * from './types/index.js';
 
@@ -75,16 +75,18 @@ export class PromptEngine {
       throw new Error(`Failed to load prompt template "${promptId}" at path "${filePath}": ${(err as Error).message}`);
     }
 
-    let template: PromptTemplate;
+    let parsedJson: unknown;
     try {
-      template = JSON.parse(rawContent);
+      parsedJson = JSON.parse(rawContent);
     } catch (err) {
       throw new Error(`Failed to parse prompt template "${promptId}" as JSON: ${(err as Error).message}`);
     }
 
-    // Basic runtime check
-    if (!template || !Array.isArray(template.messages)) {
-      throw new Error(`Invalid prompt template structure for "${promptId}": messages array is required`);
+    let template: PromptTemplate;
+    try {
+      template = PromptTemplateSchema.parse(parsedJson);
+    } catch (err) {
+      throw new Error(`Prompt template "${promptId}" at "${filePath}" failed schema validation: ${(err as Error).message}`);
     }
 
     return template;

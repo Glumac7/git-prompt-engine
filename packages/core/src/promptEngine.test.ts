@@ -21,6 +21,8 @@ describe('PromptEngine', () => {
   it('should load a prompt template from disk, interpolate variables, and return message templates', async () => {
     const promptId = 'welcome-email';
     const templateContent = {
+      id: promptId,
+      name: 'Welcome Email',
       messages: [
         { role: 'system', content: 'You are an onboarding assistant.' },
         { role: 'user', content: 'Welcome to the platform, {{name}}! Your role is {{role}}.' }
@@ -45,6 +47,8 @@ describe('PromptEngine', () => {
   it('should support spaces in placeholder tags', async () => {
     const promptId = 'space-tags';
     const templateContent = {
+      id: promptId,
+      name: 'Space Tags',
       messages: [
         { role: 'user', content: 'Hello {{ name }}! Welcome to {{   company   }}.' }
       ],
@@ -67,6 +71,8 @@ describe('PromptEngine', () => {
   it('should use fallback parameters if variables are missing from the render request', async () => {
     const promptId = 'welcome-email';
     const templateContent = {
+      id: promptId,
+      name: 'Welcome Email',
       messages: [
         { role: 'user', content: 'Welcome to {{company}}, {{name}}!' }
       ],
@@ -94,6 +100,8 @@ describe('PromptEngine', () => {
   it('should throw an error if a required variable is missing from both variables and fallbackParams', async () => {
     const promptId = 'missing-vars';
     const templateContent = {
+      id: promptId,
+      name: 'Missing Vars',
       messages: [
         { role: 'user', content: 'Welcome to {{company}}, {{name}}!' }
       ],
@@ -115,6 +123,8 @@ describe('PromptEngine', () => {
   it('should hit the disk only once when caching is enabled and TTL is active', async () => {
     const promptId = 'cached-prompt';
     const templateContent = {
+      id: promptId,
+      name: 'Cached Prompt',
       messages: [{ role: 'user', content: 'Counter: {{count}}' }],
       requiredVariables: ['count']
     };
@@ -133,6 +143,8 @@ describe('PromptEngine', () => {
 
     // Overwrite the file on disk to see if engine returns cached version
     const updatedContent = {
+      id: promptId,
+      name: 'Cached Prompt',
       messages: [{ role: 'user', content: 'New Counter: {{count}}' }],
       requiredVariables: ['count']
     };
@@ -150,6 +162,8 @@ describe('PromptEngine', () => {
 
     const promptId = 'ttl-prompt';
     const templateContent = {
+      id: promptId,
+      name: 'TTL Prompt',
       messages: [{ role: 'user', content: 'Value: {{val}}' }],
       requiredVariables: ['val']
     };
@@ -167,6 +181,8 @@ describe('PromptEngine', () => {
 
     // Modify disk template
     const updatedContent = {
+      id: promptId,
+      name: 'TTL Prompt',
       messages: [{ role: 'user', content: 'New Value: {{val}}' }],
       requiredVariables: ['val']
     };
@@ -197,5 +213,41 @@ describe('PromptEngine', () => {
     await expect(engine.render(promptId)).rejects.toThrow(
       /Failed to parse prompt template "bad-json"/
     );
+  });
+
+  it('should throw a detailed validation error if the prompt template fails schema validation and not cache it', async () => {
+    const promptId = 'invalid-schema-prompt';
+    // Missing required fields 'id' and 'name'
+    const templateContent = {
+      messages: [
+        { role: 'invalid-role', content: 'Hello' }
+      ],
+      requiredVariables: []
+    };
+
+    const filePath = path.join(tempDir, `${promptId}.json`);
+    await fs.writeFile(filePath, JSON.stringify(templateContent, null, 2));
+
+    const engine = new PromptEngine({ promptDir: tempDir, cacheTtl: 5000 });
+
+    // 1st render attempt: should fail Zod validation
+    await expect(engine.render(promptId)).rejects.toThrow(
+      /Prompt template "invalid-schema-prompt" at ".*" failed schema validation/
+    );
+
+    // Now write a valid template to the same file
+    const validContent = {
+      id: promptId,
+      name: 'Valid Schema Prompt',
+      messages: [
+        { role: 'user', content: 'Hello!' }
+      ],
+      requiredVariables: []
+    };
+    await fs.writeFile(filePath, JSON.stringify(validContent, null, 2));
+
+    // 2nd render attempt: should succeed because the first failed attempt did NOT cache the bad configuration
+    const messages = await engine.render(promptId);
+    expect(messages).toEqual([{ role: 'user', content: 'Hello!' }]);
   });
 });
