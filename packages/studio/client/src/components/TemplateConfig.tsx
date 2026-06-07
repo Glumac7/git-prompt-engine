@@ -15,7 +15,7 @@ export const TemplateConfig = React.memo(function TemplateConfig({
   onChange
 }: TemplateConfigProps) {
   return (
-    <div className="glass-panel p-5 rounded-xl flex flex-col gap-4">
+    <div className="glass-panel p-5 rounded-xl flex flex-col gap-4 flex-none">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5 text-xs text-indigo-400 font-bold uppercase tracking-wider">
           <Settings size={13} />

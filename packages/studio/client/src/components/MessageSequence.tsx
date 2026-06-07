@@ -166,7 +166,7 @@ export const MessageSequence = React.memo(function MessageSequence({
   onMoveMessage
 }: MessageSequenceProps) {
   return (
-    <div className="glass-panel p-5 rounded-xl flex flex-col gap-4 flex-1 min-h-[300px]">
+    <div className="glass-panel p-5 rounded-xl flex flex-col gap-4 min-h-[300px] flex-none">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5 text-xs text-indigo-400 font-bold uppercase tracking-wider">
           <FileText size={13} />
@@ -195,7 +195,7 @@ export const MessageSequence = React.memo(function MessageSequence({
         </div>
       </div>
 
-      <div className="space-y-4 flex-1">
+      <div className="space-y-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center border border-dashed border-slate-800 rounded-lg py-12 text-slate-500 gap-2">
             <FileText size={24} className="text-slate-600" />

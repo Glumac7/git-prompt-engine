@@ -171,7 +171,7 @@ export default function App() {
                 />
 
                 {/* Section: Model Parameters & Variables */}
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-2 gap-6 flex-none">
                   
                   {/* Parameters Panel */}
                   <ModelParameters
