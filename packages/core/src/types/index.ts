@@ -15,8 +15,17 @@ export const PromptTemplateSchema = z.object({
 export type MessageTemplate = z.infer<typeof MessageTemplateSchema>;
 export type PromptTemplate = z.infer<typeof PromptTemplateSchema>;
 
+export interface TelemetryEvent {
+  type: 'cache_hit' | 'cache_miss' | 'compile' | 'read_file' | 'schema_validation';
+  promptId: string;
+  durationMs: number;
+  success: boolean;
+  error?: string;
+}
+
 export interface EngineOptions {
   promptDir: string;
   cacheTtl?: number; // In milliseconds
   fallbackParams?: Record<string, string>;
+  onTelemetry?: (event: TelemetryEvent) => void;
 }

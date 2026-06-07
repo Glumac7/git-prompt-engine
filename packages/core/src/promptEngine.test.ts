@@ -526,6 +526,79 @@ describe('PromptEngine', () => {
         vi.useRealTimers();
       });
     });
+
+    describe('Telemetry Events', () => {
+      it('should fire telemetry events for disk reads, schema validation, compile, cache hits and misses', async () => {
+        const promptId = 'telemetry-test';
+        const templateContent = {
+          id: promptId,
+          name: 'Telemetry Prompt',
+          messages: [{ role: 'user', content: 'Greeting: {{greet}}' }],
+          requiredVariables: ['greet']
+        };
+        await fs.writeFile(
+          path.join(tempDir, `${promptId}.json`),
+          JSON.stringify(templateContent, null, 2)
+        );
+
+        const events: any[] = [];
+        const engine = new PromptEngine({
+          promptDir: tempDir,
+          cacheTtl: 10000,
+          onTelemetry: (e) => events.push(e)
+        });
+
+        // First compile: cache miss -> read file -> schema validation -> compile
+        await engine.compile(promptId, { greet: 'Hello' });
+
+        expect(events).toHaveLength(4);
+        expect(events[0]).toMatchObject({ type: 'cache_miss', promptId, success: true });
+        expect(events[1]).toMatchObject({ type: 'read_file', promptId, success: true });
+        expect(events[2]).toMatchObject({ type: 'schema_validation', promptId, success: true });
+        expect(events[3]).toMatchObject({ type: 'compile', promptId, success: true });
+        expect(events[1].durationMs).toBeGreaterThanOrEqual(0);
+        expect(events[2].durationMs).toBeGreaterThanOrEqual(0);
+        expect(events[3].durationMs).toBeGreaterThanOrEqual(0);
+
+        // Clear events list
+        events.length = 0;
+
+        // Second compile: cache hit -> compile
+        await engine.compile(promptId, { greet: 'Welcome' });
+        expect(events).toHaveLength(2);
+        expect(events[0]).toMatchObject({ type: 'cache_hit', promptId, success: true });
+        expect(events[1]).toMatchObject({ type: 'compile', promptId, success: true });
+      });
+
+      it('should fire telemetry events with error message when compilation or validation fails', async () => {
+        const promptId = 'invalid-telemetry';
+        // Invalid template missing 'name' field
+        const templateContent = {
+          id: promptId,
+          messages: [{ role: 'user', content: 'Greeting: {{greet}}' }]
+        };
+        await fs.writeFile(
+          path.join(tempDir, `${promptId}.json`),
+          JSON.stringify(templateContent, null, 2)
+        );
+
+        const events: any[] = [];
+        const engine = new PromptEngine({
+          promptDir: tempDir,
+          onTelemetry: (e) => events.push(e)
+        });
+
+        await expect(engine.compile(promptId, { greet: 'Hello' })).rejects.toThrow();
+
+        // Should trigger read_file (success), schema_validation (failure), compile (failure)
+        expect(events).toHaveLength(3);
+        expect(events[0]).toMatchObject({ type: 'read_file', promptId, success: true });
+        expect(events[1]).toMatchObject({ type: 'schema_validation', promptId, success: false });
+        expect(events[2]).toMatchObject({ type: 'compile', promptId, success: false });
+        expect(events[1].error).toBeDefined();
+        expect(events[2].error).toBeDefined();
+      });
+    });
   });
 });
 

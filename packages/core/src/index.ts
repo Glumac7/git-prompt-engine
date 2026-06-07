@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { EngineOptions, PromptTemplate, MessageTemplate, PromptTemplateSchema } from './types/index.js';
+import { EngineOptions, PromptTemplate, MessageTemplate, PromptTemplateSchema, TelemetryEvent } from './types/index.js';
 
 export * from './types/index.js';
 
@@ -42,12 +42,24 @@ export class PromptEngine {
       const cached = this.cache.get(promptId);
       if (cached) {
         if (Date.now() < cached.expiresAt) {
+          this.options.onTelemetry?.({
+            type: 'cache_hit',
+            promptId,
+            durationMs: 0,
+            success: true,
+          });
           return cached.template;
         } else {
           // Surpasses assigned TTL window, invalidate the cache
           this.cache.delete(promptId);
         }
       }
+      this.options.onTelemetry?.({
+        type: 'cache_miss',
+        promptId,
+        durationMs: 0,
+        success: true,
+      });
     }
 
     let pending = this.pendingReads.get(promptId);
@@ -91,34 +103,63 @@ export class PromptEngine {
   }
 
   private async compileInternal(promptId: string, variables: Record<string, string> = {}): Promise<MessageTemplate[]> {
-    const template = await this.getTemplate(promptId);
+    const startCompile = performance.now();
+    try {
+      const template = await this.getTemplate(promptId);
 
-    const mergedVariables = {
-      ...this.options.fallbackParams,
-      ...variables,
-    };
+      const mergedVariables = {
+        ...this.options.fallbackParams,
+        ...variables,
+      };
 
-    if (template.requiredVariables && Array.isArray(template.requiredVariables)) {
-      for (const required of template.requiredVariables) {
-        if (mergedVariables[required] === undefined) {
-          throw new Error(
-            `Evaluation Error: Missing required application parameter "${required}" for prompt template "${promptId}". (Missing required variable(s): ${required})`
-          );
+      if (template.requiredVariables && Array.isArray(template.requiredVariables)) {
+        for (const required of template.requiredVariables) {
+          if (mergedVariables[required] === undefined) {
+            const err = new Error(
+              `Evaluation Error: Missing required application parameter "${required}" for prompt template "${promptId}". (Missing required variable(s): ${required})`
+            );
+            this.options.onTelemetry?.({
+              type: 'compile',
+              promptId,
+              durationMs: performance.now() - startCompile,
+              success: false,
+              error: err.message,
+            });
+            throw err;
+          }
         }
       }
-    }
 
-    return template.messages.map((msg) => {
-      const content = msg.content.replace(PromptEngine.TEMPLATE_REGEX, (match, key) => {
-        const val = mergedVariables[key];
-        return val !== undefined ? val : match;
+      const result = template.messages.map((msg) => {
+        const content = msg.content.replace(PromptEngine.TEMPLATE_REGEX, (match, key) => {
+          const val = mergedVariables[key];
+          return val !== undefined ? val : match;
+        });
+
+        return {
+          role: msg.role,
+          content,
+        };
       });
 
-      return {
-        role: msg.role,
-        content,
-      };
-    });
+      this.options.onTelemetry?.({
+        type: 'compile',
+        promptId,
+        durationMs: performance.now() - startCompile,
+        success: true,
+      });
+
+      return result;
+    } catch (err) {
+      this.options.onTelemetry?.({
+        type: 'compile',
+        promptId,
+        durationMs: performance.now() - startCompile,
+        success: false,
+        error: (err as Error).message,
+      });
+      throw err;
+    }
   }
 
   /**
@@ -138,13 +179,35 @@ export class PromptEngine {
       : filePath.startsWith(resolvedPromptDir + path.sep);
 
     if (!isWithinDir) {
-      throw new Error(`Security Error: Path traversal detected for promptId "${promptId}"`);
+      const err = new Error(`Security Error: Path traversal detected for promptId "${promptId}"`);
+      this.options.onTelemetry?.({
+        type: 'read_file',
+        promptId,
+        durationMs: 0,
+        success: false,
+        error: err.message,
+      });
+      throw err;
     }
     
     let rawContent: string;
+    const startRead = performance.now();
     try {
       rawContent = await fs.readFile(filePath, 'utf-8');
+      this.options.onTelemetry?.({
+        type: 'read_file',
+        promptId,
+        durationMs: performance.now() - startRead,
+        success: true,
+      });
     } catch (err) {
+      this.options.onTelemetry?.({
+        type: 'read_file',
+        promptId,
+        durationMs: performance.now() - startRead,
+        success: false,
+        error: (err as Error).message,
+      });
       throw new Error(`Failed to load prompt template "${promptId}" at path "${filePath}": ${(err as Error).message}`);
     }
 
@@ -156,9 +219,23 @@ export class PromptEngine {
     }
 
     let template: PromptTemplate;
+    const startVal = performance.now();
     try {
       template = PromptTemplateSchema.parse(parsedJson);
+      this.options.onTelemetry?.({
+        type: 'schema_validation',
+        promptId,
+        durationMs: performance.now() - startVal,
+        success: true,
+      });
     } catch (err) {
+      this.options.onTelemetry?.({
+        type: 'schema_validation',
+        promptId,
+        durationMs: performance.now() - startVal,
+        success: false,
+        error: (err as Error).message,
+      });
       throw new Error(`Prompt template "${promptId}" at "${filePath}" failed schema validation: ${(err as Error).message}`);
     }
 
