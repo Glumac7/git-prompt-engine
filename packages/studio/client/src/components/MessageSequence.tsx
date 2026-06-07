@@ -6,6 +6,7 @@ interface MessageBlockProps {
   index: number;
   msg: MessageTemplate;
   requiredVariables: string[];
+  validationError?: { content?: string; role?: string };
   onUpdateMessage: (index: number, content: string) => void;
   onUpdateMessageRole: (index: number, role: 'system' | 'user' | 'assistant') => void;
   onDeleteMessage: (index: number) => void;
@@ -18,6 +19,7 @@ const MessageBlock = React.memo(function MessageBlock({
   index,
   msg,
   requiredVariables,
+  validationError,
   onUpdateMessage,
   onUpdateMessageRole,
   onDeleteMessage,
@@ -32,6 +34,8 @@ const MessageBlock = React.memo(function MessageBlock({
   return (
     <div 
       className={`glass-card p-4 rounded-xl border flex flex-col gap-3 transition-all relative ${
+        validationError ? 'border-rose-900/40 bg-rose-955/5 shadow-md shadow-rose-950/5' : 'border-slate-800/60'
+      } ${
         msg.role === 'system' ? 'border-l-4 border-l-indigo-500/70' : 
         msg.role === 'user' ? 'border-l-4 border-l-emerald-500/70' : 
         'border-l-4 border-l-amber-500/70'
@@ -99,10 +103,29 @@ const MessageBlock = React.memo(function MessageBlock({
           value={msg.content}
           onChange={(e) => onUpdateMessage(index, e.target.value)}
           rows={4}
-          className="w-full px-3 py-2 bg-[#080d17] border border-slate-800/60 rounded-lg text-xs font-mono text-slate-100 placeholder-slate-700 focus:outline-none focus:border-indigo-500/50"
+          className={`w-full px-3 py-2 bg-[#080d17] border rounded-lg text-xs font-mono text-slate-100 placeholder-slate-700 focus:outline-none transition-all ${
+            validationError?.content 
+              ? 'border-rose-500/40 focus:border-rose-500/60 shadow-lg shadow-rose-950/10' 
+              : 'border-slate-800/60 focus:border-indigo-500/50'
+          }`}
           placeholder={`Enter message body... Reference variables using {{variableName}}.`}
         />
       </div>
+
+      {/* Validation helper errors */}
+      {validationError?.content && (
+        <div className="flex items-center gap-1.5 text-[10px] text-rose-400 bg-rose-950/25 border border-rose-900/40 p-2 rounded-lg transition-all animate-fade-in animate-duration-200">
+          <AlertTriangle size={12} className="text-rose-400" />
+          <span>{validationError.content}</span>
+        </div>
+      )}
+
+      {validationError?.role && (
+        <div className="flex items-center gap-1.5 text-[10px] text-rose-400 bg-rose-950/25 border border-rose-900/40 p-2 rounded-lg transition-all animate-fade-in animate-duration-200">
+          <AlertTriangle size={12} className="text-rose-400" />
+          <span>{validationError.role}</span>
+        </div>
+      )}
 
       {/* Warnings / Inline errors if variables not specified */}
       {invalidVars.length > 0 && (
@@ -118,6 +141,13 @@ const MessageBlock = React.memo(function MessageBlock({
 interface MessageSequenceProps {
   messages: MessageTemplate[];
   requiredVariables: string[];
+  validation: {
+    isValid: boolean;
+    errors: {
+      name?: string;
+      messages: Record<number, { content?: string; role?: string }>;
+    };
+  };
   onAddMessage: (role: 'system' | 'user' | 'assistant') => void;
   onUpdateMessage: (index: number, content: string) => void;
   onUpdateMessageRole: (index: number, role: 'system' | 'user' | 'assistant') => void;
@@ -128,6 +158,7 @@ interface MessageSequenceProps {
 export const MessageSequence = React.memo(function MessageSequence({
   messages,
   requiredVariables,
+  validation,
   onAddMessage,
   onUpdateMessage,
   onUpdateMessageRole,
@@ -178,6 +209,7 @@ export const MessageSequence = React.memo(function MessageSequence({
               index={index}
               msg={msg}
               requiredVariables={requiredVariables}
+              validationError={validation.errors.messages?.[index]}
               onUpdateMessage={onUpdateMessage}
               onUpdateMessageRole={onUpdateMessageRole}
               onDeleteMessage={onDeleteMessage}

@@ -136,6 +136,15 @@ describe('Studio Bridge Server API', () => {
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('does not match URL path ID');
     });
+
+    it('should return 400 bad request if request contains malformed JSON', async () => {
+      const res = await request(app)
+        .post('/api/v1/prompts/some-id')
+        .set('Content-Type', 'application/json')
+        .send('{"invalid-json": '); // malformed
+
+      expect(res.status).toBe(400);
+    });
   });
 
   describe('POST /api/v1/git/commit', () => {
@@ -189,6 +198,27 @@ describe('Studio Bridge Server API', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBeDefined();
+    });
+
+    it('should return 500 internal server error if git command fails', async () => {
+      const id = 'error-prompt';
+      const filePath = path.join(tempDir, `${id}.json`);
+      await fs.writeFile(filePath, '{}');
+
+      // Mock execFile to fail for this call
+      vi.mocked(execFile).mockImplementationOnce((file: any, args: any, options: any, callback: any) => {
+        if (typeof callback === 'function') {
+          callback(new Error('Git command failed: index locked'), null, 'stderr error');
+        }
+        return {} as any;
+      });
+
+      const res = await request(app)
+        .post('/api/v1/git/commit')
+        .send({ id });
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toContain('Git commit operation failed: Git command failed: index locked');
     });
   });
 

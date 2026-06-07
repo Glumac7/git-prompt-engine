@@ -11,10 +11,12 @@ import { ModelParameters } from './components/ModelParameters';
 import { RequiredVariables } from './components/RequiredVariables';
 import { MessageSequence } from './components/MessageSequence';
 import { Playground } from './components/Playground';
+import { DiffModal } from './components/DiffModal';
 
 export default function App() {
   const {
     // State
+    prompts,
     activeId,
     activePrompt,
     isModified,
@@ -34,12 +36,11 @@ export default function App() {
     metrics,
     playgroundVariables,
     setPlaygroundVariables,
-    customModelMode,
-    setCustomModelMode,
     newVarName,
     setNewVarName,
     compiledMessages,
     filteredPrompts,
+    validation,
 
     // Actions
     selectPrompt,
@@ -69,6 +70,22 @@ export default function App() {
     showToast('Copied compiled transcript to clipboard!', 'info');
   }, [compiledMessages, showToast]);
 
+  // Visual Diff Modal control state
+  const [diffModalOpen, setDiffModalOpen] = React.useState(false);
+
+  const originalPrompt = React.useMemo(() => {
+    if (!activePrompt) return null;
+    return prompts.find(p => p.id === activePrompt.id) || null;
+  }, [prompts, activePrompt]);
+
+  const handleOpenDiff = React.useCallback(async () => {
+    setDiffModalOpen(true);
+  }, []);
+
+  const handleConfirmSave = React.useCallback(async () => {
+    await handleSave();
+  }, [handleSave]);
+
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Toast Alert */}
@@ -92,7 +109,8 @@ export default function App() {
         activePrompt={activePrompt}
         isModified={isModified}
         isGitUncommitted={isGitUncommitted}
-        onSave={handleSave}
+        isValid={validation.isValid}
+        onSave={handleOpenDiff}
         onGitCommit={handleGitCommit}
       />
 
@@ -157,11 +175,9 @@ export default function App() {
                   
                   {/* Parameters Panel */}
                   <ModelParameters
-                    modelName={activePrompt.parameters?.modelName || 'gemini-3.5-flash'}
+                    modelName={activePrompt.parameters?.modelName ?? 'gemini-3.5-flash'}
                     temperature={activePrompt.parameters?.temperature ?? 0.7}
                     maxTokens={activePrompt.parameters?.maxTokens ?? 2048}
-                    customModelMode={customModelMode}
-                    setCustomModelMode={setCustomModelMode}
                     onChange={handleParamChange}
                   />
 
@@ -179,6 +195,7 @@ export default function App() {
                 <MessageSequence
                   messages={activePrompt.messages}
                   requiredVariables={activePrompt.requiredVariables}
+                  validation={validation}
                   onAddMessage={handleAddMessage}
                   onUpdateMessage={handleUpdateMessage}
                   onUpdateMessageRole={handleUpdateMessageRole}
@@ -207,6 +224,15 @@ export default function App() {
           )}
         </div>
       )}
+
+      {/* Visual Diff Canvas Modal */}
+      <DiffModal
+        isOpen={diffModalOpen}
+        onClose={() => setDiffModalOpen(false)}
+        onConfirm={handleConfirmSave}
+        originalPrompt={originalPrompt}
+        activePrompt={activePrompt}
+      />
     </div>
   );
 }

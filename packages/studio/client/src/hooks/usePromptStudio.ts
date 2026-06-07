@@ -56,9 +56,6 @@ export function usePromptStudio() {
       });
       return initialVars;
     });
-
-    const isPreset = MODEL_PRESETS.includes(cloned.parameters?.modelName || '');
-    editorManager.setCustomModelMode(!isPreset);
   };
 
   return {
@@ -84,12 +81,11 @@ export function usePromptStudio() {
     metrics: metricsManager.metrics,
     playgroundVariables: editorManager.playgroundVariables,
     setPlaygroundVariables: editorManager.setPlaygroundVariables,
-    customModelMode: editorManager.customModelMode,
-    setCustomModelMode: editorManager.setCustomModelMode,
     newVarName: editorManager.newVarName,
     setNewVarName: editorManager.setNewVarName,
     compiledMessages: editorManager.compiledMessages,
     filteredPrompts: promptsManager.filteredPrompts,
+    validation: editorManager.validation,
 
     // Actions
     selectPrompt: promptsManager.selectPrompt,

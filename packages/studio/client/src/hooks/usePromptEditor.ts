@@ -1,5 +1,34 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { PromptTemplateSchema } from '@git-prompt-engine/core';
 import { PromptTemplate, MessageTemplate } from '../services/api';
+
+export const ClientPromptTemplateSchema = PromptTemplateSchema.superRefine((data, ctx) => {
+  if (data.name === undefined || data.name === null || data.name.trim() === '') {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['name'],
+      message: 'Template name cannot be empty',
+    });
+  }
+  if (data.messages && Array.isArray(data.messages)) {
+    data.messages.forEach((msg, idx) => {
+      if (!msg.content || msg.content.trim() === '') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['messages', idx, 'content'],
+          message: 'Message content cannot be empty',
+        });
+      }
+      if (!msg.role) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['messages', idx, 'role'],
+          message: 'Message role must be assigned',
+        });
+      }
+    });
+  }
+});
 
 interface UsePromptEditorOptions {
   activePrompt: PromptTemplate | null;
@@ -17,8 +46,6 @@ export function usePromptEditor({
   // Variables Playground
   const [playgroundVariables, setPlaygroundVariables] = useState<Record<string, string>>({});
   
-  // Custom model text input
-  const [customModelMode, setCustomModelMode] = useState(false);
 
   // Required Variable Input
   const [newVarName, setNewVarName] = useState('');
@@ -44,10 +71,11 @@ export function usePromptEditor({
   const handleParamChange = useCallback((field: string, value: any) => {
     setActivePrompt(prev => {
       if (!prev) return null;
+      const currentParams = prev.parameters || {};
       return {
         ...prev,
         parameters: {
-          ...prev.parameters,
+          ...currentParams,
           [field]: value
         }
       };
@@ -179,14 +207,49 @@ export function usePromptEditor({
     });
   }, [activePrompt, playgroundVariables]);
 
+  // Keystroke-level Zod validation pass
+  const validation = useMemo(() => {
+    if (!activePrompt) return { isValid: true, errors: { messages: {} } };
+
+    const res = ClientPromptTemplateSchema.safeParse(activePrompt);
+    if (res.success) {
+      return { isValid: true, errors: { messages: {} } };
+    }
+
+    const errors: {
+      name?: string;
+      messages: Record<number, { content?: string; role?: string }>;
+    } = { messages: {} };
+
+    res.error.issues.forEach(issue => {
+      const [field, index, subfield] = issue.path;
+      if (field === 'messages' && typeof index === 'number') {
+        if (!errors.messages[index]) {
+          errors.messages[index] = {};
+        }
+        if (subfield === 'content') {
+          errors.messages[index].content = issue.message;
+        } else if (subfield === 'role') {
+          errors.messages[index].role = issue.message;
+        }
+      } else if (field === 'name') {
+        errors.name = issue.message;
+      }
+    });
+
+    return {
+      isValid: false,
+      errors
+    };
+  }, [activePrompt]);
+
   return {
     playgroundVariables,
     setPlaygroundVariables,
-    customModelMode,
-    setCustomModelMode,
     newVarName,
     setNewVarName,
     compiledMessages,
+    validation,
     handleMetaChange,
     handleParamChange,
     handleAddVariable,

@@ -1,11 +1,12 @@
 import React from 'react';
-import { Save, GitCommit, Sparkles } from 'lucide-react';
+import { Save, GitCommit, Sparkles, AlertTriangle } from 'lucide-react';
 import { PromptTemplate } from '../services/api';
 
 interface HeaderProps {
   activePrompt: PromptTemplate | null;
   isModified: boolean;
   isGitUncommitted: boolean;
+  isValid: boolean;
   onSave: () => Promise<void>;
   onGitCommit: () => Promise<void>;
 }
@@ -14,6 +15,7 @@ export const Header = React.memo(function Header({
   activePrompt,
   isModified,
   isGitUncommitted,
+  isValid,
   onSave,
   onGitCommit
 }: HeaderProps) {
@@ -43,11 +45,18 @@ export const Header = React.memo(function Header({
             {isModified ? 'Unsaved Changes' : isGitUncommitted ? 'Uncommitted (Git)' : 'All Saved & Committed'}
           </span>
 
+          {!isValid && (
+            <span className="text-xs text-rose-400 flex items-center gap-1 bg-rose-950/20 border border-rose-900/30 px-2 py-1 rounded-md transition-all animate-fade-in">
+              <AlertTriangle size={12} className="text-rose-400" />
+              Invalid Structure
+            </span>
+          )}
+
           <button
             onClick={onSave}
-            disabled={!isModified}
+            disabled={!isModified || !isValid}
             className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-              isModified 
+              isModified && isValid
                 ? 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-500 shadow-lg shadow-indigo-600/10 cursor-pointer' 
                 : 'bg-slate-900/60 text-slate-500 border-slate-800 cursor-not-allowed'
             }`}
@@ -77,6 +86,7 @@ export const Header = React.memo(function Header({
     !!prevProps.activePrompt === !!nextProps.activePrompt &&
     prevProps.activePrompt?.id === nextProps.activePrompt?.id &&
     prevProps.isModified === nextProps.isModified &&
-    prevProps.isGitUncommitted === nextProps.isGitUncommitted
+    prevProps.isGitUncommitted === nextProps.isGitUncommitted &&
+    prevProps.isValid === nextProps.isValid
   );
 });

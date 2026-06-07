@@ -10,6 +10,12 @@ export const PromptTemplateSchema = z.object({
   name: z.string(),
   requiredVariables: z.array(z.string()),
   messages: z.array(MessageTemplateSchema),
+  description: z.string().optional(),
+  parameters: z.object({
+    modelName: z.string().optional(),
+    temperature: z.number().optional(),
+    maxTokens: z.number().optional(),
+  }).optional(),
 });
 
 export type MessageTemplate = z.infer<typeof MessageTemplateSchema>;

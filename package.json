@@ -11,7 +11,8 @@
     "studio:server": "npm run dev --prefix packages/studio/server",
     "studio:client": "npm run dev --prefix packages/studio/client",
     "studio:dev": "npm run dev --prefix packages/studio/server & npm run dev --prefix packages/studio/client",
-    "studio": "npm run build --prefix packages/core && (PROMPT_DIR=../../../prompts npm run dev --prefix packages/studio/server & npm run dev --prefix packages/studio/client)"
+    "studio": "npm run build --prefix packages/core && (PROMPT_DIR=../../../prompts npm run dev --prefix packages/studio/server & npm run dev --prefix packages/studio/client)",
+    "test": "npm run test --workspaces --if-present"
   },
   "engines": {
     "node": ">=24.0.0"

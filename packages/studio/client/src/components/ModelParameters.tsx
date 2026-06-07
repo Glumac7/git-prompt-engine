@@ -1,14 +1,12 @@
 import React from 'react';
-import { Sliders } from 'lucide-react';
-import { Slider } from '@base-ui/react/slider';
+import { Sliders, ChevronDown } from 'lucide-react';
+import { Autocomplete } from '@base-ui/react/autocomplete';
 import { MODEL_PRESETS } from '../hooks/usePromptStudio';
 
 interface ModelParametersProps {
   modelName: string;
   temperature: number;
   maxTokens: number;
-  customModelMode: boolean;
-  setCustomModelMode: (val: boolean) => void;
   onChange: (field: string, value: any) => void;
 }
 
@@ -16,8 +14,6 @@ export const ModelParameters = React.memo(function ModelParameters({
   modelName,
   temperature,
   maxTokens,
-  customModelMode,
-  setCustomModelMode,
   onChange
 }: ModelParametersProps) {
   return (
@@ -27,65 +23,68 @@ export const ModelParameters = React.memo(function ModelParameters({
           <Sliders size={13} />
           Model Parameters
         </div>
-        
-        {/* Toggle Custom Model input */}
-        <button
-          onClick={() => {
-            setCustomModelMode(!customModelMode);
-          }}
-          className="text-[10px] text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer"
-        >
-          {customModelMode ? 'Use Preset List' : 'Enter Custom Model'}
-        </button>
       </div>
 
       <div className="space-y-4">
-        {/* Model Name Combobox */}
-        <div>
+        {/* Model Name Predefined Base UI Autocomplete */}
+        <div className="flex flex-col">
           <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">Targeted Model</label>
-          {customModelMode ? (
-            <input
-              type="text"
-              value={modelName}
-              onChange={(e) => onChange('modelName', e.target.value)}
-              placeholder="e.g. custom-llama-3-100b"
-              className="w-full px-3 py-1.5 bg-[#0c1220] border border-slate-800/80 rounded-lg text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
-            />
-          ) : (
-            <select
-              value={modelName || 'gemini-3.5-flash'}
-              onChange={(e) => onChange('modelName', e.target.value)}
-              className="w-full px-3 py-1.5 bg-[#0c1220] border border-slate-800/80 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-            >
-              {MODEL_PRESETS.map((model) => (
-                <option key={model} value={model}>{model}</option>
-              ))}
-            </select>
-          )}
+          <Autocomplete.Root
+            items={MODEL_PRESETS}
+            value={modelName}
+            onValueChange={(val) => onChange('modelName', val)}
+            openOnInputClick
+            autoHighlight
+          >
+            <div className="relative flex items-center w-full">
+              <Autocomplete.Input
+                placeholder="Select preset or type custom..."
+                className="w-full pl-3 pr-8 py-1.5 bg-[#0c1220] border border-slate-800/80 rounded-lg text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 transition-all font-sans"
+              />
+              <Autocomplete.Trigger className="absolute right-2 text-slate-500 hover:text-slate-300 p-0.5 cursor-pointer flex items-center justify-center bg-transparent border-none outline-none group">
+                <ChevronDown size={14} className="transform transition-transform duration-200 group-data-[popup-open]:rotate-180" />
+              </Autocomplete.Trigger>
+            </div>
+
+            <Autocomplete.Portal>
+              <Autocomplete.Positioner className="z-50 w-[var(--anchor-width)]" sideOffset={6}>
+                <Autocomplete.Popup className="max-h-48 overflow-y-auto bg-[#0d1324]/95 backdrop-blur-md border border-slate-800/90 rounded-lg shadow-2xl py-1 font-sans text-xs scrollbar-thin scrollbar-thumb-slate-800 focus:outline-none">
+                  <Autocomplete.Empty className="px-3 py-2 text-slate-500 italic select-none">
+                    Press Enter to use custom model name
+                  </Autocomplete.Empty>
+                  <Autocomplete.List className="focus:outline-none">
+                    {(preset: string) => (
+                      <Autocomplete.Item
+                        key={preset}
+                        value={preset}
+                        className="px-3 py-1.5 cursor-pointer transition-colors text-slate-300 data-[highlighted]:bg-indigo-600 data-[highlighted]:text-white focus:outline-none"
+                      >
+                        {preset}
+                      </Autocomplete.Item>
+                    )}
+                  </Autocomplete.List>
+                </Autocomplete.Popup>
+              </Autocomplete.Positioner>
+            </Autocomplete.Portal>
+          </Autocomplete.Root>
         </div>
 
-        {/* Temperature with Base UI Slider */}
+        {/* Temperature with Premium styled Range Input */}
         <div>
           <div className="flex items-center justify-between text-[11px] font-semibold text-slate-400 mb-1">
             <span>Temperature</span>
             <span className="font-mono text-indigo-400">{temperature}</span>
           </div>
-          <div className="px-1 py-1">
-            <Slider.Root 
-              value={[temperature]} 
-              onValueChange={(val) => onChange('temperature', val[0])}
-              min={0} 
-              max={2} 
+          <div className="px-1 py-2 flex items-center">
+            <input
+              type="range"
+              min={0}
+              max={2}
               step={0.1}
-              className="relative flex items-center w-full h-5 touch-none select-none cursor-pointer"
-            >
-              <Slider.Control className="relative w-full h-1 bg-slate-800 rounded-full">
-                <Slider.Track className="w-full h-1 rounded-full">
-                  <Slider.Indicator className="absolute h-full bg-gradient-to-r from-indigo-500 to-indigo-400 rounded-full" />
-                  <Slider.Thumb className="absolute block w-3.5 h-3.5 bg-white border border-indigo-500 rounded-full -translate-y-1.25 -translate-x-1.75 shadow focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-transform active:scale-110" />
-                </Slider.Track>
-              </Slider.Control>
-            </Slider.Root>
+              value={temperature}
+              onChange={(e) => onChange('temperature', parseFloat(e.target.value))}
+              className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500 focus:outline-none"
+            />
           </div>
         </div>
 
