@@ -3,8 +3,16 @@
   "version": "1.0.0",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/core",
+    "packages/studio/server",
+    "packages/studio/client"
   ],
+  "scripts": {
+    "studio:server": "npm run dev --prefix packages/studio/server",
+    "studio:client": "npm run dev --prefix packages/studio/client",
+    "studio:dev": "npm run dev --prefix packages/studio/server & npm run dev --prefix packages/studio/client",
+    "studio": "npm run build --prefix packages/core && (PROMPT_DIR=../../../prompts npm run dev --prefix packages/studio/server & npm run dev --prefix packages/studio/client)"
+  },
   "engines": {
     "node": ">=24.0.0"
   }

@@ -1,0 +1,23 @@
+{
+  "id": "translator",
+  "name": "English-Spanish Translator",
+  "requiredVariables": [
+    "textToTranslate"
+  ],
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a professional translator. Translate the user's text into Spanish. Retain the same tone and formatting."
+    },
+    {
+      "role": "user",
+      "content": "{{textToTranslate}}"
+    }
+  ],
+  "description": "Translates any input text into high-quality Spanish text.",
+  "parameters": {
+    "modelName": "gemini-3.5-flash",
+    "temperature": 0.3,
+    "maxTokens": 1024
+  }
+}
