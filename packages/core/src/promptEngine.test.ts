@@ -250,4 +250,89 @@ describe('PromptEngine', () => {
     const messages = await engine.render(promptId);
     expect(messages).toEqual([{ role: 'user', content: 'Hello!' }]);
   });
+
+  describe('compile method', () => {
+    it('should compile a prompt template successfully when all required variables are provided', async () => {
+      const promptId = 'compile-success';
+      const templateContent = {
+        id: promptId,
+        name: 'Compile Success',
+        messages: [
+          { role: 'system', content: 'You are a help desk agent.' },
+          { role: 'user', content: 'Customer Name: {{name}}. Issue: {{issue}}.' }
+        ],
+        requiredVariables: ['name', 'issue']
+      };
+
+      await fs.writeFile(
+        path.join(tempDir, `${promptId}.json`),
+        JSON.stringify(templateContent, null, 2)
+      );
+
+      const engine = new PromptEngine({ promptDir: tempDir });
+      const messages = await engine.compile(promptId, { name: 'Bob', issue: 'Login Failure' });
+
+      expect(messages).toEqual([
+        { role: 'system', content: 'You are a help desk agent.' },
+        { role: 'user', content: 'Customer Name: Bob. Issue: Login Failure.' }
+      ]);
+    });
+
+    it('should throw a highly explicit evaluation error specifying the exact missing key when a required variable is missing', async () => {
+      const promptId = 'compile-missing';
+      const templateContent = {
+        id: promptId,
+        name: 'Compile Missing',
+        messages: [
+          { role: 'user', content: 'Hello {{first_name}} {{last_name}}!' }
+        ],
+        requiredVariables: ['first_name', 'last_name']
+      };
+
+      await fs.writeFile(
+        path.join(tempDir, `${promptId}.json`),
+        JSON.stringify(templateContent, null, 2)
+      );
+
+      const engine = new PromptEngine({ promptDir: tempDir });
+
+      await expect(engine.compile(promptId, { first_name: 'John' })).rejects.toThrow(
+        /Evaluation Error: Missing required application parameter "last_name" for prompt template "compile-missing"/
+      );
+    });
+
+    it('should respect caching TTL and avoid disk hits on subsequent compilation calls', async () => {
+      const promptId = 'compile-cached';
+      const templateContent = {
+        id: promptId,
+        name: 'Compile Cached',
+        messages: [{ role: 'user', content: 'Greeting: {{greet}}' }],
+        requiredVariables: ['greet']
+      };
+
+      const filePath = path.join(tempDir, `${promptId}.json`);
+      await fs.writeFile(filePath, JSON.stringify(templateContent, null, 2));
+
+      const engine = new PromptEngine({
+        promptDir: tempDir,
+        cacheTtl: 10000
+      });
+
+      const res1 = await engine.compile(promptId, { greet: 'Hello' });
+      expect(res1[0].content).toBe('Greeting: Hello');
+
+      // Overwrite the file on disk
+      const updatedContent = {
+        id: promptId,
+        name: 'Compile Cached',
+        messages: [{ role: 'user', content: 'Updated Greeting: {{greet}}' }],
+        requiredVariables: ['greet']
+      };
+      await fs.writeFile(filePath, JSON.stringify(updatedContent, null, 2));
+
+      // compile should still resolve with cached content structure
+      const res2 = await engine.compile(promptId, { greet: 'Hi' });
+      expect(res2[0].content).toBe('Greeting: Hi');
+    });
+  });
 });

@@ -10,6 +10,8 @@ interface CacheEntry {
 }
 
 export class PromptEngine {
+  private static readonly TEMPLATE_REGEX = /\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g;
+
   private options: EngineOptions;
   private cache: Map<string, CacheEntry>;
 
@@ -58,11 +60,47 @@ export class PromptEngine {
   }
 
   /**
+   * Compiles the prompt template with runtime variables.
+   * Cross-references the keys of the incoming runtime payload against the prompt's requiredVariables.
+   * Throws an explicit evaluation error if any required variables are missing.
+   */
+  public async compile(promptId: string, variables: Record<string, string> = {}): Promise<MessageTemplate[]> {
+    const template = await this.getTemplate(promptId);
+
+    const mergedVariables = {
+      ...this.options.fallbackParams,
+      ...variables,
+    };
+
+    if (template.requiredVariables && Array.isArray(template.requiredVariables)) {
+      for (const required of template.requiredVariables) {
+        if (mergedVariables[required] === undefined) {
+          throw new Error(
+            `Evaluation Error: Missing required application parameter "${required}" for prompt template "${promptId}". (Missing required variable(s): ${required})`
+          );
+        }
+      }
+    }
+
+    return template.messages.map((msg) => {
+      const content = msg.content.replace(PromptEngine.TEMPLATE_REGEX, (match, key) => {
+        const val = mergedVariables[key];
+        return val !== undefined ? val : match;
+      });
+
+      return {
+        role: msg.role,
+        content,
+      };
+    });
+  }
+
+  /**
    * Retrieves the prompt template and interpolates variables.
+   * Delegates to the core compile method.
    */
   public async render(promptId: string, variables: Record<string, string> = {}): Promise<MessageTemplate[]> {
-    const template = await this.getTemplate(promptId);
-    return this.interpolate(template, variables);
+    return this.compile(promptId, variables);
   }
 
   private async readTemplateFromDisk(promptId: string): Promise<PromptTemplate> {
@@ -90,39 +128,5 @@ export class PromptEngine {
     }
 
     return template;
-  }
-
-  private interpolate(template: PromptTemplate, variables: Record<string, string>): MessageTemplate[] {
-    const mergedVariables = {
-      ...this.options.fallbackParams,
-      ...variables,
-    };
-
-    // Check for missing required variables
-    if (template.requiredVariables && Array.isArray(template.requiredVariables)) {
-      const missing: string[] = [];
-      for (const required of template.requiredVariables) {
-        if (mergedVariables[required] === undefined) {
-          missing.push(required);
-        }
-      }
-      if (missing.length > 0) {
-        throw new Error(`Missing required variable(s): ${missing.join(', ')}`);
-      }
-    }
-
-    // Interpolate placeholders: {{variableName}}
-    return template.messages.map((msg) => {
-      let content = msg.content;
-      content = content.replace(/\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g, (match, key) => {
-        const val = mergedVariables[key];
-        return val !== undefined ? val : match;
-      });
-
-      return {
-        role: msg.role,
-        content,
-      };
-    });
   }
 }
