@@ -100,7 +100,10 @@ export function usePromptStudio() {
     handleMoveMessage: editorManager.handleMoveMessage,
     handleSave: promptsManager.handleSave,
     handleGitCommit: promptsManager.handleGitCommit,
+    handleCheckoutBranch: promptsManager.handleCheckoutBranch,
+    handlePushBranch: promptsManager.handlePushBranch,
     handleCreatePrompt: dialogManager.handleCreatePrompt,
-    showToast: toastManager.showToast
+    showToast: toastManager.showToast,
+    gitStatus: promptsManager.gitStatus
   };
 }

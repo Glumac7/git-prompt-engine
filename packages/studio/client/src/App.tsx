@@ -41,6 +41,7 @@ export default function App() {
     compiledMessages,
     filteredPrompts,
     validation,
+    gitStatus,
 
     // Actions
     selectPrompt,
@@ -55,6 +56,8 @@ export default function App() {
     handleMoveMessage,
     handleSave,
     handleGitCommit,
+    handleCheckoutBranch,
+    handlePushBranch,
     handleCreatePrompt,
     showToast
   } = usePromptStudio();
@@ -112,6 +115,9 @@ export default function App() {
         isValid={validation.isValid}
         onSave={handleOpenDiff}
         onGitCommit={handleGitCommit}
+        gitStatus={gitStatus}
+        onCheckoutBranch={handleCheckoutBranch}
+        onPushBranch={handlePushBranch}
       />
 
       {/* Main Workspace Body */}
@@ -211,6 +217,7 @@ export default function App() {
                 setPlaygroundVariables={setPlaygroundVariables}
                 compiledMessages={compiledMessages}
                 onCopyTranscript={handleCopyTranscript}
+                activePrompt={activePrompt}
               />
             </div>
           ) : (

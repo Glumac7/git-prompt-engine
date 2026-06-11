@@ -1,5 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { parse as parseYaml } from 'yaml';
 import { EngineOptions, PromptTemplate, MessageTemplate, PromptTemplateSchema, TelemetryEvent } from './types/index.js';
 
 export * from './types/index.js';
@@ -172,13 +173,17 @@ export class PromptEngine {
 
   private async readTemplateFromDisk(promptId: string): Promise<PromptTemplate> {
     const resolvedPromptDir = path.resolve(this.options.promptDir);
-    const filePath = path.resolve(resolvedPromptDir, `${promptId}.json`);
+    const jsonPath = path.resolve(resolvedPromptDir, `${promptId}.json`);
+    const yamlPath = path.resolve(resolvedPromptDir, `${promptId}.yaml`);
+    const ymlPath = path.resolve(resolvedPromptDir, `${promptId}.yml`);
 
-    const isWithinDir = resolvedPromptDir === path.sep
-      ? filePath.startsWith(resolvedPromptDir)
-      : filePath.startsWith(resolvedPromptDir + path.sep);
+    const isWithinDir = (p: string) => {
+      return resolvedPromptDir === path.sep
+        ? p.startsWith(resolvedPromptDir)
+        : p.startsWith(resolvedPromptDir + path.sep);
+    };
 
-    if (!isWithinDir) {
+    if (!isWithinDir(jsonPath) || !isWithinDir(yamlPath) || !isWithinDir(ymlPath)) {
       const err = new Error(`Security Error: Path traversal detected for promptId "${promptId}"`);
       this.options.onTelemetry?.({
         type: 'read_file',
@@ -191,37 +196,96 @@ export class PromptEngine {
     }
     
     let rawContent: string;
+    let filePath = jsonPath;
+    let fileType: 'json' | 'yaml' | 'yml' = 'json';
     const startRead = performance.now();
+
     try {
-      rawContent = await fs.readFile(filePath, 'utf-8');
+      rawContent = await fs.readFile(jsonPath, 'utf-8');
+      fileType = 'json';
+      filePath = jsonPath;
       this.options.onTelemetry?.({
         type: 'read_file',
         promptId,
         durationMs: performance.now() - startRead,
         success: true,
       });
-    } catch (err) {
-      this.options.onTelemetry?.({
-        type: 'read_file',
-        promptId,
-        durationMs: performance.now() - startRead,
-        success: false,
-        error: (err as Error).message,
-      });
-      throw new Error(`Failed to load prompt template "${promptId}" at path "${filePath}": ${(err as Error).message}`);
+    } catch (jsonErr) {
+      if ((jsonErr as any).code === 'ENOENT') {
+        try {
+          rawContent = await fs.readFile(yamlPath, 'utf-8');
+          fileType = 'yaml';
+          filePath = yamlPath;
+          this.options.onTelemetry?.({
+            type: 'read_file',
+            promptId,
+            durationMs: performance.now() - startRead,
+            success: true,
+          });
+        } catch (yamlErr) {
+          if ((yamlErr as any).code === 'ENOENT') {
+            try {
+              rawContent = await fs.readFile(ymlPath, 'utf-8');
+              fileType = 'yml';
+              filePath = ymlPath;
+              this.options.onTelemetry?.({
+                type: 'read_file',
+                promptId,
+                durationMs: performance.now() - startRead,
+                success: true,
+              });
+            } catch (ymlErr) {
+              this.options.onTelemetry?.({
+                type: 'read_file',
+                promptId,
+                durationMs: performance.now() - startRead,
+                success: false,
+                error: (ymlErr as Error).message,
+              });
+              throw new Error(`Failed to load prompt template "${promptId}" at path "${jsonPath}" or YAML fallbacks: ${(ymlErr as Error).message}`);
+            }
+          } else {
+            this.options.onTelemetry?.({
+              type: 'read_file',
+              promptId,
+              durationMs: performance.now() - startRead,
+              success: false,
+              error: (yamlErr as Error).message,
+            });
+            throw new Error(`Failed to load prompt template "${promptId}" at path "${yamlPath}": ${(yamlErr as Error).message}`);
+          }
+        }
+      } else {
+        this.options.onTelemetry?.({
+          type: 'read_file',
+          promptId,
+          durationMs: performance.now() - startRead,
+          success: false,
+          error: (jsonErr as Error).message,
+        });
+        throw new Error(`Failed to load prompt template "${promptId}" at path "${jsonPath}": ${(jsonErr as Error).message}`);
+      }
     }
 
-    let parsedJson: unknown;
-    try {
-      parsedJson = JSON.parse(rawContent);
-    } catch (err) {
-      throw new Error(`Failed to parse prompt template "${promptId}" as JSON: ${(err as Error).message}`);
+    let parsedContent: unknown;
+    if (fileType === 'json') {
+      try {
+        parsedContent = JSON.parse(rawContent);
+      } catch (err) {
+        throw new Error(`Failed to parse prompt template "${promptId}" as JSON: ${(err as Error).message}`);
+      }
+    } else {
+      try {
+        parsedContent = parseYaml(rawContent);
+      } catch (err) {
+        throw new Error(`Failed to parse prompt template "${promptId}" as YAML: ${(err as Error).message}`);
+      }
     }
 
     let template: PromptTemplate;
     const startVal = performance.now();
     try {
-      template = PromptTemplateSchema.parse(parsedJson);
+      template = PromptTemplateSchema.parse(parsedContent);
       this.options.onTelemetry?.({
         type: 'schema_validation',
         promptId,

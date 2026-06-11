@@ -4,6 +4,9 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "git-prompt-studio": "./dist/index.js"
+  },
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc",
@@ -16,6 +19,7 @@
     "@git-prompt-engine/core": "*",
     "cors": "^2.8.5",
     "express": "^4.19.2",
+    "yaml": "^2.9.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {

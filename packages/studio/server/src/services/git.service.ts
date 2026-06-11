@@ -6,8 +6,112 @@ import { isSafePath, ID_REGEX } from '../utils/path.js';
 
 const execFileAsync = promisify(execFile);
 
+export interface GitStatus {
+  currentBranch: string;
+  branches: string[];
+  isDirty: boolean;
+}
+
 export class GitService {
   constructor(private readonly promptDir: string) {}
+
+  public async getGitStatus(): Promise<GitStatus> {
+    let currentBranch = '';
+    try {
+      const { stdout } = await execFileAsync('git', ['branch', '--show-current'], { cwd: this.promptDir });
+      currentBranch = stdout.trim();
+    } catch {
+      // Ignore and fallback
+    }
+
+    if (!currentBranch) {
+      try {
+        const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: this.promptDir });
+        currentBranch = stdout.trim();
+      } catch {
+        currentBranch = 'unknown';
+      }
+    }
+
+    let branches: string[] = [];
+    try {
+      const { stdout } = await execFileAsync('git', ['branch', '--format=%(refname:short)'], { cwd: this.promptDir });
+      branches = stdout.split('\n').map(b => b.trim()).filter(b => b.length > 0);
+    } catch {
+      branches = [currentBranch];
+    }
+
+    let isDirty = false;
+    try {
+      const { stdout } = await execFileAsync('git', ['status', '--porcelain'], { cwd: this.promptDir });
+      isDirty = stdout.trim().length > 0;
+    } catch {
+      isDirty = false;
+    }
+
+    return {
+      currentBranch,
+      branches,
+      isDirty,
+    };
+  }
+
+  public async checkoutBranch(name: string, create?: boolean): Promise<{ success: boolean; message: string }> {
+    if (!name || typeof name !== 'string' || name.startsWith('-') || /\s/.test(name)) {
+      const error = new Error('Invalid branch name');
+      (error as any).status = 400;
+      throw error;
+    }
+
+    try {
+      if (create) {
+        await execFileAsync('git', ['checkout', '-b', name], { cwd: this.promptDir });
+      } else {
+        await execFileAsync('git', ['checkout', name], { cwd: this.promptDir });
+      }
+      return {
+        success: true,
+        message: `Successfully checked out branch "${name}"`,
+      };
+    } catch (err: any) {
+      const error = new Error(err.message || 'Failed to checkout branch');
+      (error as any).status = 400;
+      throw error;
+    }
+  }
+
+  public async pushBranch(): Promise<{ success: boolean; message: string }> {
+    let currentBranch = '';
+    try {
+      const { stdout } = await execFileAsync('git', ['branch', '--show-current'], { cwd: this.promptDir });
+      currentBranch = stdout.trim();
+    } catch {}
+
+    if (!currentBranch) {
+      try {
+        const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: this.promptDir });
+        currentBranch = stdout.trim();
+      } catch {}
+    }
+
+    if (!currentBranch || currentBranch === 'HEAD' || currentBranch === 'unknown') {
+      const error = new Error('Cannot push in detached HEAD state or unknown branch');
+      (error as any).status = 400;
+      throw error;
+    }
+
+    try {
+      await execFileAsync('git', ['push', 'origin', currentBranch], { cwd: this.promptDir });
+      return {
+        success: true,
+        message: `Successfully pushed branch "${currentBranch}" to origin`,
+      };
+    } catch (err: any) {
+      const error = new Error(err.message || 'Failed to push branch');
+      (error as any).status = 400;
+      throw error;
+    }
+  }
 
   public async commitPrompt(id: string): Promise<{ committed: boolean; message: string; duration: number }> {
     if (!ID_REGEX.test(id)) {

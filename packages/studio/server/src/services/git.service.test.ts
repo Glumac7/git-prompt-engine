@@ -9,12 +9,39 @@ vi.mock('node:child_process', () => {
   return {
     execFile: vi.fn((file, args, options, callback) => {
       if (typeof callback === 'function') {
-        if (args.includes('status')) {
-          if (args.some((a: string) => a.includes('unchanged'))) {
-            callback(null, { stdout: '' }, '');
+        if (args[0] === 'branch') {
+          if (args[1] === '--show-current') {
+            // Detached HEAD mockup logic
+            if (options && options.cwd && options.cwd.includes('detached')) {
+              callback(null, { stdout: '' }, '');
+            } else {
+              callback(null, { stdout: 'main\n' }, '');
+            }
+          } else if (args[1] === '--format=%(refname:short)') {
+            callback(null, { stdout: 'main\nfeature-xyz\n' }, '');
           } else {
-            callback(null, { stdout: ' M test.json' }, '');
+            callback(null, { stdout: '' }, '');
           }
+        } else if (args[0] === 'rev-parse') {
+          callback(null, { stdout: 'HEAD\n' }, '');
+        } else if (args[0] === 'status' && args.includes('--porcelain')) {
+          if (args.length === 2) {
+            if (options && options.cwd && options.cwd.includes('dirty')) {
+              callback(null, { stdout: ' M somefile.json\n' }, '');
+            } else {
+              callback(null, { stdout: '' }, '');
+            }
+          } else {
+            if (args.some((a: string) => a.includes('unchanged'))) {
+              callback(null, { stdout: '' }, '');
+            } else {
+              callback(null, { stdout: ' M test.json\n' }, '');
+            }
+          }
+        } else if (args[0] === 'checkout') {
+          callback(null, { stdout: 'Switched to branch' }, '');
+        } else if (args[0] === 'push') {
+          callback(null, { stdout: 'Pushed successfully' }, '');
         } else {
           callback(null, { stdout: 'Mocked successful commit' }, '');
         }
@@ -55,5 +82,52 @@ describe('GitService', () => {
     const result = await service.commitPrompt(id);
     expect(result.committed).toBe(true);
     expect(execFile).toHaveBeenCalled();
+  });
+
+  describe('getGitStatus', () => {
+    it('should return branch status information', async () => {
+      const status = await service.getGitStatus();
+      expect(status.currentBranch).toBe('main');
+      expect(status.branches).toEqual(['main', 'feature-xyz']);
+      expect(status.isDirty).toBe(false);
+    });
+
+    it('should show isDirty true if status output is non-empty', async () => {
+      const dirtyService = new GitService(path.join(tempDir, 'dirty'));
+      const status = await dirtyService.getGitStatus();
+      expect(status.isDirty).toBe(true);
+    });
+  });
+
+  describe('checkoutBranch', () => {
+    it('should switch branch successfully', async () => {
+      const res = await service.checkoutBranch('feature-xyz');
+      expect(res.success).toBe(true);
+      expect(res.message).toContain('Successfully checked out branch "feature-xyz"');
+    });
+
+    it('should create and switch branch successfully', async () => {
+      const res = await service.checkoutBranch('new-branch', true);
+      expect(res.success).toBe(true);
+      expect(res.message).toContain('Successfully checked out branch "new-branch"');
+    });
+
+    it('should validate branch names to prevent flag injection', async () => {
+      await expect(service.checkoutBranch('-invalid')).rejects.toThrow('Invalid branch name');
+      await expect(service.checkoutBranch('invalid name')).rejects.toThrow('Invalid branch name');
+    });
+  });
+
+  describe('pushBranch', () => {
+    it('should push current branch successfully', async () => {
+      const res = await service.pushBranch();
+      expect(res.success).toBe(true);
+      expect(res.message).toContain('Successfully pushed branch "main" to origin');
+    });
+
+    it('should fail if current branch is unknown/detached HEAD', async () => {
+      const detachedService = new GitService(path.join(tempDir, 'detached'));
+      await expect(detachedService.pushBranch()).rejects.toThrow(/Cannot push in detached HEAD state/);
+    });
   });
 });

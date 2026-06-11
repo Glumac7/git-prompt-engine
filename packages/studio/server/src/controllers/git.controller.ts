@@ -8,6 +8,48 @@ export class GitController {
     private readonly metricsService: MetricsService
   ) {}
 
+  public getGitStatus = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const status = await this.gitService.getGitStatus();
+      res.json(status);
+    } catch (err: any) {
+      const statusCode = err.status || 500;
+      res.status(statusCode).json({ error: `Git status check failed: ${err.message}` });
+    }
+  };
+
+  public checkoutBranch = async (req: Request, res: Response): Promise<void> => {
+    const { name, create } = req.body;
+    if (!name || typeof name !== 'string') {
+      res.status(400).json({ error: 'Missing or invalid branch name in request body' });
+      return;
+    }
+
+    try {
+      const result = await this.gitService.checkoutBranch(name, create);
+      res.json({
+        success: true,
+        message: result.message,
+      });
+    } catch (err: any) {
+      const statusCode = err.status || 500;
+      res.status(statusCode).json({ error: `Git checkout operation failed: ${err.message}` });
+    }
+  };
+
+  public pushBranch = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const result = await this.gitService.pushBranch();
+      res.json({
+        success: true,
+        message: result.message,
+      });
+    } catch (err: any) {
+      const statusCode = err.status || 500;
+      res.status(statusCode).json({ error: `Git push operation failed: ${err.message}` });
+    }
+  };
+
   public commitPrompt = async (req: Request, res: Response): Promise<void> => {
     const { id } = req.body;
     if (!id || typeof id !== 'string') {

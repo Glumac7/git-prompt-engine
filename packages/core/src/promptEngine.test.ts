@@ -599,6 +599,82 @@ describe('PromptEngine', () => {
         expect(events[2].error).toBeDefined();
       });
     });
+
+    describe('YAML/YML Support', () => {
+      it('should load a prompt template from a .yaml file', async () => {
+        const promptId = 'yaml-prompt';
+        const yamlContent = `
+id: yaml-prompt
+name: YAML Prompt
+messages:
+  - role: system
+    content: "You are a YAML expert."
+  - role: user
+    content: "Tell me about {{topic}}."
+requiredVariables:
+  - topic
+`;
+
+        await fs.writeFile(
+          path.join(tempDir, `${promptId}.yaml`),
+          yamlContent
+        );
+
+        const engine = new PromptEngine({ promptDir: tempDir });
+        const messages = await engine.render(promptId, { topic: 'indented syntax' });
+
+        expect(messages).toEqual([
+          { role: 'system', content: 'You are a YAML expert.' },
+          { role: 'user', content: 'Tell me about indented syntax.' }
+        ]);
+      });
+
+      it('should load a prompt template from a .yml file', async () => {
+        const promptId = 'yml-prompt';
+        const yamlContent = `
+id: yml-prompt
+name: YML Prompt
+messages:
+  - role: user
+    content: "Short extension test: {{test}}."
+requiredVariables:
+  - test
+`;
+
+        await fs.writeFile(
+          path.join(tempDir, `${promptId}.yml`),
+          yamlContent
+        );
+
+        const engine = new PromptEngine({ promptDir: tempDir });
+        const messages = await engine.render(promptId, { test: 'success' });
+
+        expect(messages).toEqual([
+          { role: 'user', content: 'Short extension test: success.' }
+        ]);
+      });
+
+      it('should throw an error when parsing invalid YAML', async () => {
+        const promptId = 'invalid-yaml-prompt';
+        const yamlContent = `
+id: invalid-yaml-prompt
+messages:
+  - role: user
+    content: "{{test}"
+  bad-indentation:
+    - this is not
+  valid:
+`;
+
+        await fs.writeFile(
+          path.join(tempDir, `${promptId}.yaml`),
+          yamlContent
+        );
+
+        const engine = new PromptEngine({ promptDir: tempDir });
+        await expect(engine.render(promptId, { test: 'val' })).rejects.toThrow(/Failed to parse prompt template "invalid-yaml-prompt" as YAML/);
+      });
+    });
   });
 });
 

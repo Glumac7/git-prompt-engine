@@ -4,8 +4,12 @@ import {
   savePrompt, 
   commitPrompt, 
   fetchMetrics, 
+  fetchGitStatus,
+  checkoutBranch,
+  pushBranch,
   PromptTemplate, 
-  ServerMetrics 
+  ServerMetrics,
+  GitStatus
 } from '../services/api';
 
 interface UsePromptsManagerOptions {
@@ -25,6 +29,7 @@ export function usePromptsManager({
   const [activePrompt, setActivePrompt] = useState<PromptTemplate | null>(null);
   const [isModified, setIsModified] = useState(false);
   const [isGitUncommitted, setIsGitUncommitted] = useState(false);
+  const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -95,6 +100,15 @@ export function usePromptsManager({
   }, [onPromptSelected]);
 
   // Load prompts & metrics on mount
+  const refreshGitStatus = useCallback(async () => {
+    try {
+      const status = await fetchGitStatus();
+      setGitStatus(status);
+    } catch (err) {
+      console.error('Failed to fetch git status:', err);
+    }
+  }, []);
+
   useEffect(() => {
     async function loadInitialData() {
       try {
@@ -136,6 +150,14 @@ export function usePromptsManager({
         
         const metricsData = await fetchMetrics();
         setMetrics(metricsData);
+
+        try {
+          const statusData = await fetchGitStatus();
+          setGitStatus(statusData);
+        } catch (gitErr) {
+          console.error('Initial git status load failed:', gitErr);
+        }
+
         setLoading(false);
       } catch (err) {
         setError((err as Error).message);
@@ -158,11 +180,12 @@ export function usePromptsManager({
         setIsModified(false);
         setIsGitUncommitted(true);
         showToast(`Saved prompt "${currentPrompt.id}" to local disk.`, 'success');
+        await refreshGitStatus();
       }
     } catch (err) {
       showToast(`Save failed: ${(err as Error).message}`, 'error');
     }
-  }, [showToast]);
+  }, [showToast, refreshGitStatus]);
 
   // Git Commit Prompt
   const handleGitCommit = useCallback(async () => {
@@ -180,11 +203,59 @@ export function usePromptsManager({
         // Reload metrics to show update in git commits count
         const metricsData = await fetchMetrics();
         setMetrics(metricsData);
+        await refreshGitStatus();
       }
     } catch (err) {
       showToast(`Git commit failed: ${(err as Error).message}`, 'error');
     }
-  }, [handleSave, showToast, setMetrics]);
+  }, [handleSave, showToast, setMetrics, refreshGitStatus]);
+
+  // Branch operations
+  const handleCheckoutBranch = useCallback(async (name: string, create?: boolean) => {
+    if (isModifiedRef.current) {
+      if (!confirm('You have unsaved changes. Switching branches may discard or conflict with them. Proceed?')) {
+        return;
+      }
+    }
+    try {
+      setLoading(true);
+      const res = await checkoutBranch(name, create);
+      showToast(res.message, 'success');
+      
+      const statusData = await fetchGitStatus();
+      setGitStatus(statusData);
+      
+      const data = await fetchPrompts();
+      setPrompts(data);
+      if (data.length > 0) {
+        const currentActiveId = activePromptRef.current?.id;
+        const exists = data.some(p => p.id === currentActiveId);
+        if (exists && currentActiveId) {
+          selectPrompt(currentActiveId, data);
+        } else {
+          selectPrompt(data[0].id, data);
+        }
+      } else {
+        setActiveId(null);
+        setActivePrompt(null);
+      }
+      setLoading(false);
+    } catch (err) {
+      showToast(`Branch checkout failed: ${(err as Error).message}`, 'error');
+      setLoading(false);
+    }
+  }, [selectPrompt, showToast]);
+
+  const handlePushBranch = useCallback(async () => {
+    try {
+      showToast('Pushing current branch to origin...', 'info');
+      const res = await pushBranch();
+      showToast(res.message, 'success');
+      await refreshGitStatus();
+    } catch (err) {
+      showToast(`Push failed: ${(err as Error).message}`, 'error');
+    }
+  }, [showToast, refreshGitStatus]);
 
   // Filtered Prompt List
   const filteredPrompts = useMemo(() => {
@@ -212,6 +283,9 @@ export function usePromptsManager({
     filteredPrompts,
     selectPrompt,
     handleSave,
-    handleGitCommit
+    handleGitCommit,
+    gitStatus,
+    handleCheckoutBranch,
+    handlePushBranch
   };
 }

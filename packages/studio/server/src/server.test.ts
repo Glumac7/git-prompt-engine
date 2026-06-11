@@ -10,8 +10,15 @@ vi.mock('node:child_process', () => {
   return {
     execFile: vi.fn((file, args, options, callback) => {
       if (typeof callback === 'function') {
-        // Mock git status --porcelain return value based on args
-        if (args.includes('status') && args.includes('--porcelain')) {
+        if (args[0] === 'branch') {
+          if (args[1] === '--show-current') {
+            callback(null, { stdout: 'main\n' }, '');
+          } else if (args[1] === '--format=%(refname:short)') {
+            callback(null, { stdout: 'main\nfeature-abc\n' }, '');
+          } else {
+            callback(null, { stdout: '' }, '');
+          }
+        } else if (args[0] === 'status' && args.includes('--porcelain')) {
           if (args.some((a: string) => a.includes('unchanged'))) {
             callback(null, { stdout: '' }, '');
           } else {
@@ -310,6 +317,146 @@ describe('Studio Bridge Server API', () => {
       expect(res.body.core.cacheMisses).toBe(1);
       expect(res.body.core.avgDiskReadMs).toBeGreaterThanOrEqual(0);
       expect(res.body.core.avgSchemaValidationMs).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  describe('GET /api/v1/git/status', () => {
+    it('should return git repository status info', async () => {
+      const res = await request(app).get('/api/v1/git/status');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        currentBranch: 'main',
+        branches: ['main', 'feature-abc'],
+        isDirty: true,
+      });
+    });
+  });
+
+  describe('POST /api/v1/git/branch', () => {
+    it('should checkout an existing branch successfully', async () => {
+      const res = await request(app)
+        .post('/api/v1/git/branch')
+        .send({ name: 'feature-abc' });
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.message).toContain('Successfully checked out branch "feature-abc"');
+    });
+
+    it('should create and checkout a new branch successfully', async () => {
+      const res = await request(app)
+        .post('/api/v1/git/branch')
+        .send({ name: 'new-feature', create: true });
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.message).toContain('Successfully checked out branch "new-feature"');
+    });
+
+    it('should fail if name is missing or invalid', async () => {
+      const res = await request(app)
+        .post('/api/v1/git/branch')
+        .send({});
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Missing or invalid branch name');
+    });
+  });
+
+  describe('POST /api/v1/git/push', () => {
+    it('should push current branch successfully', async () => {
+      const res = await request(app).post('/api/v1/git/push');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.message).toContain('Successfully pushed branch "main" to origin');
+    });
+  });
+
+  describe('POST /api/v1/playground/run', () => {
+    it('should fail if x-api-key is missing', async () => {
+      const res = await request(app)
+        .post('/api/v1/playground/run')
+        .send({
+          provider: 'openai',
+          model: 'gpt-4o',
+          messages: [{ role: 'user', content: 'hello' }],
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Missing x-api-key header');
+    });
+
+    it('should fail if provider is missing', async () => {
+      const res = await request(app)
+        .post('/api/v1/playground/run')
+        .set('x-api-key', 'mock-key')
+        .send({
+          model: 'gpt-4o',
+          messages: [{ role: 'user', content: 'hello' }],
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Missing or invalid parameters');
+    });
+
+    it('should stream chunks and end with [DONE]', async () => {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        async start(controller) {
+          controller.enqueue(encoder.encode('data: {"choices": [{"delta": {"content": "Hello"}}]}\n'));
+          controller.enqueue(encoder.encode('data: {"choices": [{"delta": {"content": " world"}}]}\n'));
+          controller.enqueue(encoder.encode('data: [DONE]\n'));
+          controller.close();
+        },
+      });
+
+      const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        body: stream,
+        headers: new Headers(),
+      } as unknown as Response);
+
+      const res = await request(app)
+        .post('/api/v1/playground/run')
+        .set('x-api-key', 'mock-key')
+        .send({
+          provider: 'openai',
+          model: 'gpt-4o',
+          messages: [{ role: 'user', content: 'hello' }],
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('text/event-stream');
+      expect(res.text).toContain('data: {"text":"Hello"}');
+      expect(res.text).toContain('data: {"text":" world"}');
+      expect(res.text).toContain('data: [DONE]');
+      expect(fetchSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('Static files and client route routing', () => {
+    it('should serve index.html for non-API routes when client/dist exists', async () => {
+      const testClientDistDir = path.resolve(__dirname, '../../client/dist');
+      const indexHtmlPath = path.join(testClientDistDir, 'index.html');
+      let originalContent: string | null = null;
+      try {
+        originalContent = await fs.readFile(indexHtmlPath, 'utf8');
+      } catch (e) {
+        // Doesn't exist, we will create it
+      }
+
+      await fs.mkdir(testClientDistDir, { recursive: true });
+      await fs.writeFile(indexHtmlPath, '<html>Mock Index</html>');
+
+      try {
+        const testApp = createServer(tempDir);
+        const res = await request(testApp).get('/some-random-route');
+        expect(res.status).toBe(200);
+        expect(res.text).toBe('<html>Mock Index</html>');
+      } finally {
+        if (originalContent !== null) {
+          await fs.writeFile(indexHtmlPath, originalContent);
+        } else {
+          await fs.rm(indexHtmlPath, { force: true });
+        }
+      }
     });
   });
 });
